@@ -11,12 +11,17 @@ import (
 	"github.com/wfarr/termtable"
 )
 
-func main() {
-	// establish connection to our socket, for both reads and writes
+func connect() (net.Conn) {
 	conn, err := net.Dial("unix", "/var/lib/nagios/rw/nagios.qh")
 	if err != nil {
 		panic(err.Error())
 	}
+    return conn
+}
+
+func main() {
+	// establish connection to our socket, for both reads and writes
+    conn := connect()
 	defer conn.Close()
 
 	// suss out what command we actually wish to run
@@ -25,7 +30,17 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case "help", "status", "check", "acknowledge", "unacknowledge", "disable_notifications", "enable_notifications", "downtime", "problems", "muted", "stats":
+    case "status", "check":
+        output := ""
+        for _,host := range os.Args[2:] {
+            send_command(conn, os.Args[1] + " " + host)
+            output += read_results(conn)
+            conn.Close()
+            conn = connect()
+        }
+        print_table(output)
+        return
+	case "help", "acknowledge", "unacknowledge", "disable_notifications", "enable_notifications", "downtime", "problems", "muted", "stats":
 		send_command(conn, strings.Join(os.Args[1:], " "))
 	case "ack":
 		send_command(conn, "acknowledge" + " " + strings.Join(os.Args[2:], " "))
@@ -40,8 +55,12 @@ func main() {
 	}
 
 	output := read_results(conn)
+    print_table(output)
+}
+
+func print_table(output string) {
 	lines := strings.Split(output, "\n")
-	table_it, err := regexp.MatchString(";", output)
+	table_it, _ := regexp.MatchString(";", output)
 
 	if len(lines[1:]) > 0 && table_it {
 		sort.Sort(sort.StringSlice(lines))
